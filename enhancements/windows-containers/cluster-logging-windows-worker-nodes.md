@@ -1,8 +1,7 @@
 ---
 title: openshift-windows-worker-node-and-container-logging
 authors:
-  - "@ravisantoshgudimetla"
-  - "@aravindhp"
+  - "@mansikulkarni96"
 reviewers:
   - "@crawford"
   - "@sdodson"
@@ -36,116 +35,87 @@ and pods running in an OpenShift cluster
 ## Motivation
 
 Logging is a critical component for identifying issues with nodes, containers
-running on the nodes. The main motivation behind this enhancement is to bring 
-Windows node logging infrastructure on par with linux nodes
+running on the nodes. The main motivation behind this enhancement is to provide
+a logging solution for the Windows nodes that will help gather useful logs from
+different components for debugging issues and monitoring cluster activity.
 
 ### Goals
 
 As part of this enhancement, we plan to do the following:
-* Deploy log collection infrastructure onto Windows nodes
-* Collect node and pod logs
-* Upgrade log collection infrastructure
-* Forward logs and events from nodes and pods to log store
+* Deploy log collection infrastructure onto the Windows nodes.
+* Collect node and pod logs.
+* Upgrade log collection infrastructure.
+* Forward logs and events from nodes and pods to log store.
 
 ### Non-Goals
 
 As part of this enhancement, we do not plan to support:
-* Logging for Windows containers
-  * Microsoft will provide us with the logging framework that enables Windows 
-    containers to redirect logs to standard out from various sources like 
-    ETW, Perf Counters etc
-* Customization of log collection infrastructure
-  * We plan to support fluentd only
-  * Microsoft will provide us with a Windows fluentd binary or gem file
+* Logging for Windows containers.
+* Customization of log collection infrastructure.
+  * We plan to use the Microsoft provided Windows Fluentd binary and the Fluentd
+    logging driver that enables Windows containers to redirect logs to various
+    destinations using the Fluentd output plugins.
 
 
 ## Proposal
 
-The main idea here is to deploy fluentd as a log collection agent onto Windows 
-nodes after cluster logging operator is deployed onto the cluster. Fluentd has
-support for Windows logging. We plan to leverage it and run fluentd as a 
-Windows service.
+The main idea here is to deploy Fluentd as a log collection agent onto Windows 
+nodes after cluster logging operator is deployed onto the OpenShift cluster. 
+Fluentd has support for Windows logging. We plan to leverage it and run Fluentd 
+as a Windows service.
 
 
 ### Implementation Details
 
-We plan to create a Windows Node logging Ansible Playbook that can
+Once WMCO is installed from the OperatorHub and Cluster Logging operator is deployed 
+onto the cluster, the WMCO will perform the following steps to configure logging:
 
-* Download fluentd binary for Windows from a known location and transfers it to
-  the Windows node
-* Configure the container runtime to use fluentd as the logging driver
-* Configure fluentd to communicate with elasticsearch data store in the same 
-  format as logs emitted from linux worker nodes
-
-The inputs to this playbook
-
-* The ip address, port, certificate to connect the elasticsearch service
-* URL from which fluentd Windows binary can be downloaded from
-
-We can get the ipaddress and other details from various pods and secrets present
-in the OpenShift cluster, once the cluster logging operator has been deployed.
-If the certificates change, cluster admin should run the ansible playbook
-again. 
-
-Kubelet on Windows nodes logs to a file. So, we also need to configure 
-fluentd's record transformer to ensure that logs collected from the kubelet log
-file are in format understandable to elasticsearch
+ * Download the td-agent .msi installer binary from a known location and 
+      transfer it to the Windows node.
+ * Run td-agent's fluentdwinsvc as a Windows service.
+         * td-agent is a stable distribution of Fluentd, fluentdwinsvc
+           is permanently registered as a Windows service by the msi installer.
+ * Install the required Fluentd output plugins onto the Windows nodes.
+ * Configure the container runtime to use Fluentd as the logging driver on Windows node.
+ * Configure td-agent to forward logs to the elasticsearch data storage in a format
+   understandable to elasticsearch. 
+ * Kubelet on Windows nodes logs to a file. So, we also need to configure 
+   fluentd's record transformer to ensure that logs collected from the kubelet log
+   file are in required format.
+          
 
 ### Justification
 
-Following are the reasons for having this ansible playbook approach instead of 
-an operator driven approach:
-
-* When we move to an operator based model, we would like to use the cluster 
-  logging operator for managing the logging on Windows nodes instead of
-  creating our own operator
-* Cluster logging operator will undergo changes related to the log collection 
-  API in the 4.3 timeframe and that uncertainity makes it difficult to introduce
-  Windows specific changes
-
-This design allows us to be future proof where in the ansible playbook can be 
-converted to an operator.
+* The reason we want to use the .msi installer package is to have the ability
+  to run Fluentd as a Windows service. This will allow Windows to manage the 
+  process and ensure it is always running for log collection.
+  
  
 ### Risks and Mitigations
 
-The main risk with this proposal are the following dependencies on Microsoft: 
-
-* To provide us with fluentd binary
-* Container logging works on Windows nodes
-* Container runtime writes container logs in a format understandable by fluentd
-  plugin
-
-Mitigations:
-
-* If fluentd binary is not shipped by Microsoft, we plan to install fluentd 
-  from upstream which will result in Red Hat being responsible for security and 
-  other fixes. 
-* If Microsoft doesn't provide container logging framework on Windows nodes, we
-  would just support node logging in 4.3 timeframe
-
-## Design Details
+The risks involved with this proposal are:
+* Dependency on the Microsoft provided td-agent .msi installer for providing a logging solution.
 
 ### Test Plan
 
-We plan to add e2e tests to ensure 
+We plan to add e2e tests to ensure:
 
-* Fluentd service is running on Windows node
-* Windows nodes are forwarding logs properly to elasticsearch
+* Fluentd is running as a Windows service on Windows nodes.
+* Windows nodes are forwarding logs properly to elasticsearch.
 
 ### Graduation Criteria
 
-This enhancement will start as GA
+This enhancement will start as GA.
 
 ### Upgrade / Downgrade Strategy
 
-We will support upgrades/downgrade of fluentd by publishing a new release of 
-Windows Node logging playbook. An older release of the playbook can be used to 
-downgrade.
-
+We will support upgrade / downgrade to the Fluentd component, 
+compatible with the release versions of WMCO. 
 
 ## Implementation History
 
-v1: Initial Proposal
+We had initially implemented a [ansible playbook](https://github.com/openshift/windows-machine-config-bootstrapper/tree/0cfab036cefbe4d658b160d9ae80289ce1e1249f/tools/ansible/tasks/logging) approach to install Fluentd
+and the required plugins onto the Windows nodes.
 
 ## Drawbacks
 
@@ -161,14 +131,9 @@ customers.
 
 ## Alternatives
 
-An alternative approach would be to make changes to cluster logging operator to
-ensure that it can manage fluentd DaemonSet pod on the Windows nodes
+An alternative approach would be to modify the cluster logging operator to
+manage Fluentd service on the Windows nodes. 
+We are deciding not to go ahead with this approach in the current timeframe
+since the fluentd DaemonSet pod cannot be deployed onto the Windows nodes,
+this introduces many unknowns in this project.
 
-We are deciding to not go ahead with this approach considering the timeframe
-and all the unknowns present in this project.
-
-## Infrastructure Needed 
-
-Windows worker nodes will available for the e2e tests to run against. The
-existing openshift-ansible github repository will host the code being 
-implemented as part of this feature.
