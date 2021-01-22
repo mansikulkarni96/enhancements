@@ -62,15 +62,14 @@ As part of this enhancement, we do not plan to support:
 ## Proposal
 
 The main idea here is to deploy Fluentd as a log collection agent onto Windows 
-nodes after cluster logging operator is deployed on the OpenShift cluster. 
+nodes only after cluster logging operator is deployed on the OpenShift cluster. 
 Fluentd has support for Windows logging. We plan to leverage it and run Fluentd 
 as a Windows service.
 
 
 ### Implementation Details
 
-WMCO image will be packed with the td-agent .msi installer binary in addition
-to the required binaries mentioned in WMCO enhancement.
+The td-agent MSI installer will be added to the WMCO image payload.
 Once both WMCO and the Cluster Logging Operator are deployed on the cluster,
 following steps are required to configure logging:
  * Install td-agent.
@@ -87,7 +86,7 @@ following steps are required to configure logging:
 
 * We cannot deploy fluentd as a container on Windows nodes in the way it is 
   deployed on linux nodes by Cluster Logging Operator due to the support 
-  reasons for Windows containers mentioned in the WMCO enhancement.
+  reasons for Windows containers mentioned in the [WMCO enhancement](https://github.com/openshift/enhancements/blob/master/enhancements/windows-containers/windows-machine-config-operator.md#justification).
 * The reason for using the .msi installer package is to have the ability
   to run Fluentd as a Windows service. This will allow Windows to manage the 
   process and ensure it is always running for log collection.
